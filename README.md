@@ -1,4 +1,4 @@
-# job-scan
+# daily-job-scan
 
 A daily job-posting scanner for a hand-picked list of companies in Israel. Every
 afternoon it collects the companies' open roles, matches them against each
