@@ -18,10 +18,10 @@ person by adding a row.
 
 ```
                  ┌──────────────────────── Google Sheet ────────────────────────┐
- Fetch.gs ──────►│ ham_ilanlar (raw Israel postings)   ats_kapsam (coverage)     │
+ Fetch.gs ──────►│ raw_postings (Israel postings)   fetch_coverage (per source) │
  (ATS APIs)      │                                                              │
-                 │ good_companies_with_careers.csv     kisiler (people)         │
- Claude agent ──►│ ilanlar (matched postings, append-only)   tarama (run log)   │
+                 │ companies                        people                      │
+ Claude agent ──►│ postings (matched, append-only)  scan_log (one row per run)  │
  (match + verify)│                                                              │
                  └──────────────────────────────┬───────────────────────────────┘
                                                 ▼
@@ -40,14 +40,14 @@ a posting fits a person, and checking that links are live.
 ## Setup
 
 1. **Sheet.** Create the tabs described in [`docs/sheet-schema.md`](docs/sheet-schema.md).
-   `ham_ilanlar` and `ats_kapsam` are created by the script on its first run.
+   `raw_postings` and `fetch_coverage` are created by the script on its first run.
 2. **Apps Script.** In the sheet: *Extensions → Apps Script*. Add the four
    `.gs` files from `apps-script/` and replace `appsscript.json` (enable
    "Show appsscript.json" in Project Settings), or push them with
    [clasp](#deploying-with-clasp). Then run `setup` once and approve the
    permissions. It creates the two daily triggers and removes old ones.
 3. **Check the fetchers.** Run `testFetch` once. The log lists every
-   company + source with `ok` / `hata` (error) and how many postings it found.
+   company + source with `ok` / `error` and how many postings it found.
    Fix or remove sources that error (usually a wrong board slug).
 4. **Agent.** Create a scheduled Claude task that runs daily after the fetch
    and before the mail, with the Google Sheets and Google Drive connectors.
@@ -56,14 +56,14 @@ a posting fits a person, and checking that links are live.
 
 ## Adding things
 
-- **A company:** add a row to the company tab. A name is enough; the agent finds
-  the careers page. If you know the ATS, put it in column D as `type: url`,
+- **A company:** add a row to `companies`. A name is enough; the agent finds
+  the careers page. If you know the ATS, put it in `job_source` as `type: url`,
   e.g. `greenhouse: https://boards-api.greenhouse.io/v1/boards/acme/jobs`.
   Fetchable types: `greenhouse lever ashby workable breezy workday amazon`.
   Several sources: separate with ` | `.
-- **A person:** add a row to `kisiler` with `aktif = evet`. Profile, target
+- **A person:** add a row to `people` with `active = yes`. Profile, target
   roles, exclusions and any special rules are plain text the agent follows.
-  `cv_kaynagi` can point at a Drive folder or file.
+  `cv_source` can point at a Drive folder or file.
 
 ## Tests
 
@@ -97,4 +97,6 @@ are rows in the sheet; the sheet ID goes only into the scheduled task.
 - Pages that only render in a browser and companies that post only on
   LinkedIn or Hebrew job boards can't be read; they show up in the admin's
   "couldn't read" list for a manual look.
-- Matching quality depends on the agent and the profile text in `kisiler`.
+- Matching quality depends on the agent and the profile text in `people`.
+- Email text is in `CONFIG.MAIL_TEXT` in `Config.gs`; change it there to
+  send mail in another language.

@@ -58,7 +58,7 @@ function test(name, fn) {
 }
 
 // ---------- parseSources_ ----------
-test('parseSources_: multiple typed sources in column D', () => {
+test('parseSources_: multiple typed sources in job_source', () => {
   const { sandbox } = makeSandbox({ tabs: {}, routes: [] });
   const s = sandbox.parseSources_('workable: https://apply.workable.com/atera/ | comeet: https://www.comeet.com/jobs/atera/63.00B', '');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(s)), [
@@ -71,7 +71,7 @@ test('parseSources_: trailing note after URL is ignored', () => {
   const s = sandbox.parseSources_('greenhouse: https://boards-api.greenhouse.io/v1/boards/appsflyer/jobs (slug tahmini)', '');
   assert.strictEqual(s[0].url, 'https://boards-api.greenhouse.io/v1/boards/appsflyer/jobs');
 });
-test('parseSources_: falls back to an ATS URL in column B', () => {
+test('parseSources_: falls back to an ATS URL in careers_page', () => {
   const { sandbox } = makeSandbox({ tabs: {}, routes: [] });
   const s = sandbox.parseSources_('', 'https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite?locationHierarchy1=abc');
   assert.strictEqual(s[0].type, 'workday');
@@ -80,10 +80,10 @@ test('parseSources_: plain careers page gives nothing to fetch', () => {
   const { sandbox } = makeSandbox({ tabs: {}, routes: [] });
   assert.strictEqual(sandbox.parseSources_('', 'https://www.wix.com/careers').length, 0);
 });
-test('parseSources_: label with spaces ("viola portföy board") is kept but not fetchable', () => {
+test('parseSources_: label with spaces ("viola portfolio board") is kept but not fetchable', () => {
   const { sandbox } = makeSandbox({ tabs: {}, routes: [] });
-  const s = sandbox.parseSources_('viola portföy board: https://careers.viola-group.com/companies/glassesusa', '');
-  assert.strictEqual(s[0].type, 'viola portföy board');
+  const s = sandbox.parseSources_('viola portfolio board: https://careers.viola-group.com/companies/glassesusa', '');
+  assert.strictEqual(s[0].type, 'viola portfolio board');
   assert.strictEqual(sandbox.FETCHABLE_TYPES.indexOf(s[0].type), -1);
 });
 
@@ -98,13 +98,13 @@ test('Israel filter: cities and country codes', () => {
 
 // ---------- fetchers ----------
 const companyTab = [
-  ['company name', 'career page', 'not', 'ilan kaynağı (ATS)'],
+  ['company', 'careers_page', 'note', 'job_source'],
   ['Melio', 'https://meliopayments.com/careers/', '', 'greenhouse: https://boards-api.greenhouse.io/v1/boards/melio/jobs'],
   ['Aidoc', '', '', 'greenhouse: https://boards-api.eu.greenhouse.io/v1/boards/aidocmedical/jobs'],
   ['Mobileye', '', '', 'lever: https://api.eu.lever.co/v0/postings/mobileye'],
   ['Moon Active', '', '', 'ashby: https://api.ashbyhq.com/posting-api/job-board/moonactive'],
   ['Atera', '', '', 'workable: https://apply.workable.com/atera/ | comeet: https://www.comeet.com/jobs/atera/63.00B'],
-  ['Voltify', '', '', 'breezy: https://voltify.breezy.hr/ (ilanlar ABD\'de)'],
+  ['Voltify', '', '', 'breezy: https://voltify.breezy.hr/ (postings are in the US)'],
   ['Unity', '', '', 'workday: https://unitytech.wd1.myworkdayjobs.com/Unity'],
   ['Amazon', '', '', 'amazon: https://www.amazon.jobs/en/search.json?loc_query=Israel'],
   ['Broken', '', '', 'greenhouse: https://boards-api.greenhouse.io/v1/boards/doesnotexist/jobs'],
@@ -126,12 +126,12 @@ const routes = [
   { match: /amazon\.jobs\/en\/search\.json/, body: () => fx('amazon.json') }
 ];
 
-test('fetchAtsJobs: writes only Israel postings to ham_ilanlar', () => {
-  const tabs = { 'good_companies_with_careers.csv': companyTab };
+test('fetchAtsJobs: writes only Israel postings to raw_postings', () => {
+  const tabs = { 'companies': companyTab };
   const { sandbox } = makeSandbox({ tabs, routes });
   sandbox.fetchAtsJobs();
-  const raw = JSON.parse(JSON.stringify(tabs['ham_ilanlar']));
-  assert.deepStrictEqual(raw[0], ['tarih', 'şirket', 'pozisyon', 'lokasyon', 'link', 'kaynak']);
+  const raw = JSON.parse(JSON.stringify(tabs['raw_postings']));
+  assert.deepStrictEqual(raw[0], ['date', 'company', 'title', 'location', 'link', 'source']);
   const by = (c) => raw.slice(1).filter((r) => r[1] === c).map((r) => r[2]);
   assert.deepStrictEqual(by('Melio'), ['Senior Data Analyst - Product', 'Customer Success Manager']);
   assert.deepStrictEqual(by('Aidoc'), ['Senior Data Analyst - Product', 'Customer Success Manager']);
@@ -144,10 +144,10 @@ test('fetchAtsJobs: writes only Israel postings to ham_ilanlar', () => {
 });
 
 test('fetchAtsJobs: links are absolute and correct per ATS', () => {
-  const tabs = { 'good_companies_with_careers.csv': companyTab };
+  const tabs = { 'companies': companyTab };
   const { sandbox } = makeSandbox({ tabs, routes });
   sandbox.fetchAtsJobs();
-  const link = (c, t) => tabs['ham_ilanlar'].find((r) => r[1] === c && r[2] === t)[4];
+  const link = (c, t) => tabs['raw_postings'].find((r) => r[1] === c && r[2] === t)[4];
   assert.strictEqual(link('Melio', 'Senior Data Analyst - Product'), 'https://job-boards.greenhouse.io/melio/jobs/7820287003');
   assert.strictEqual(link('Mobileye', 'Business Analyst'), 'https://jobs.eu.lever.co/mobileye/aaa-111');
   assert.strictEqual(link('Moon Active', 'Market Researcher'), 'https://jobs.ashbyhq.com/moonactive/537eb1da');
@@ -156,13 +156,13 @@ test('fetchAtsJobs: links are absolute and correct per ATS', () => {
   assert.strictEqual(link('Amazon', 'Sales Operations Analyst, AWS Israel ENT & PS'), 'https://www.amazon.jobs/en/jobs/10570232/sales-operations-analyst');
 });
 
-test('fetchAtsJobs: coverage tab records ok / hata, skips comeet and plain pages', () => {
-  const tabs = { 'good_companies_with_careers.csv': companyTab };
+test('fetchAtsJobs: coverage tab records ok / error, skips comeet and plain pages', () => {
+  const tabs = { 'companies': companyTab };
   const { sandbox, fetched } = makeSandbox({ tabs, routes });
   sandbox.fetchAtsJobs();
-  const cov = tabs['ats_kapsam'].slice(1);
+  const cov = tabs['fetch_coverage'].slice(1);
   const row = (c) => cov.filter((r) => r[1] === c);
-  assert.strictEqual(row('Broken')[0][4], 'hata');
+  assert.strictEqual(row('Broken')[0][4], 'error');
   assert.ok(/HTTP 404/.test(row('Broken')[0][7]));
   assert.strictEqual(row('Melio')[0][4], 'ok');
   assert.strictEqual(row('Melio')[0][5], '3');   // total
@@ -180,19 +180,19 @@ test('fetchAtsJobs: coverage tab records ok / hata, skips comeet and plain pages
 // ---------- mail ----------
 function mailTabs(bobEmail) {
   return {
-    kisiler: [
-      ['isim', 'email', 'aktif', 'admin', 'cv_kaynagi', 'profil'],
-      ['Alice', 'alice@example.com', 'evet', 'evet', '', ''],
-      ['Bob', bobEmail, 'evet', 'hayır', '', ''],
-      ['Old', 'old@example.com', 'hayır', 'hayır', '', '']
+    people: [
+      ['name', 'email', 'active', 'admin', 'cv_source', 'profile'],
+      ['Alice', 'alice@example.com', 'yes', 'yes', '', ''],
+      ['Bob', bobEmail, 'yes', 'no', '', ''],
+      ['Old', 'old@example.com', 'no', 'no', '', '']
     ],
-    ilanlar: [
-      ['tarih', 'şirket', 'pozisyon', 'link', 'kimin için', 'lokasyon', 'hangi CV', 'neden uygun', 'link durumu'],
-      ['2026-11-03', 'Melio', 'Data Analyst', 'https://x/1', 'Alice', 'Tel Aviv', 'Product Analytics', 'SQL & <BI>', 'açık'],
-      ['2026-11-03', 'Global-e', 'CSM', 'https://x/2', 'Bob', 'Petah Tikva', 'Customer Success', '[SaaS: yok] fit', 'açık'],
-      ['2026-11-02', 'Old Co', 'Old Job', 'https://x/3', 'Alice', 'Tel Aviv', 'Sales Ops', 'old', 'açık']
+    postings: [
+      ['date', 'company', 'title', 'link', 'person', 'location', 'cv', 'reason', 'link_status'],
+      ['2026-11-03', 'Melio', 'Data Analyst', 'https://x/1', 'Alice', 'Tel Aviv', 'Product Analytics', 'SQL & <BI>', 'open'],
+      ['2026-11-03', 'Global-e', 'CSM', 'https://x/2', 'Bob', 'Petah Tikva', 'Customer Success', '[SaaS: none] fit', 'open'],
+      ['2026-11-02', 'Old Co', 'Old Job', 'https://x/3', 'Alice', 'Tel Aviv', 'Sales Ops', 'old', 'open']
     ],
-    tarama: [['tarih', 'okunamayan şirketler'], ['2026-11-03', 'Wix, Nvidia']]
+    scan_log: [['date', 'unreadable_companies'], ['2026-11-03', 'Wix, Nvidia']]
   };
 }
 
@@ -201,25 +201,25 @@ test('sendDailyMail: one mail per active person, only today\'s rows', () => {
   sandbox.sendDailyMail();
   assert.strictEqual(sent.length, 2);
   const adminMail = sent.find((m) => m.to === 'alice@example.com');
-  const jes = sent.find((m) => m.to === 'bob@example.com');
-  assert.strictEqual(adminMail.subject, 'Yeni ilanlar - 2026-11-03');
+  const bobMail = sent.find((m) => m.to === 'bob@example.com');
+  assert.strictEqual(adminMail.subject, 'New job postings - 2026-11-03');
   assert.ok(adminMail.htmlBody.includes('Melio') && !adminMail.htmlBody.includes('Old Co'));
-  assert.ok(adminMail.htmlBody.includes('Bakılamayan şirketler') && adminMail.htmlBody.includes('Wix, Nvidia'));
+  assert.ok(adminMail.htmlBody.includes('Companies that could not be read') && adminMail.htmlBody.includes('Wix, Nvidia'));
   assert.ok(adminMail.htmlBody.includes('SQL &amp; &lt;BI&gt;'), 'html escaped');
-  assert.strictEqual(jes.subject, 'Sana uygun yeni ilanlar - 2026-11-03');
-  assert.ok(jes.htmlBody.includes('Selam Bob') && jes.htmlBody.includes('Sevgiler, Alice'));
-  assert.ok(!jes.htmlBody.includes('Bakılamayan'), 'unreadable list only for admin');
-  assert.ok(!jes.htmlBody.includes('>CV<'), 'single-CV person has no CV column');
+  assert.strictEqual(bobMail.subject, 'New job postings for you - 2026-11-03');
+  assert.ok(bobMail.htmlBody.includes('Hi Bob') && bobMail.htmlBody.includes('fit you today. Alice'));
+  assert.ok(!bobMail.htmlBody.includes('could not be read'), 'unreadable list only for admin');
+  assert.ok(!bobMail.htmlBody.includes('>CV<'), 'single-CV person has no CV column');
   assert.ok(!sent.some((m) => m.to === 'old@example.com'), 'inactive person skipped');
 });
 
 test('sendDailyMail: admin still mailed with no postings when there is an unreadable list', () => {
   const tabs = mailTabs('bob@example.com');
-  tabs.ilanlar = tabs.ilanlar.slice(0, 1);
+  tabs.postings = tabs.postings.slice(0, 1);
   const { sandbox, sent } = makeSandbox({ tabs, routes: [] });
   sandbox.sendDailyMail();
   assert.strictEqual(sent.length, 1);
-  assert.ok(sent[0].htmlBody.includes('Bugün yeni ilan yok.'));
+  assert.ok(sent[0].htmlBody.includes('No new postings today.'));
 });
 
 test('sendDailyMail: test mode (Bob row pointing at Alice) sends two mails to Alice', () => {

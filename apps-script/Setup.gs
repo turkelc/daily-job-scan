@@ -1,11 +1,11 @@
 /**
  * Run `setup` once from the Apps Script editor. It replaces any old triggers
- * (including the earlier gunlukMail one) with:
+ * (including the legacy one from the first version) with:
  *   fetchAtsJobs   daily, FETCH_HOUR
  *   sendDailyMail  daily, MAIL_HOUR
  */
 function setup() {
-  var handlers = ['fetchAtsJobs', 'sendDailyMail', 'gunlukMail'];
+  var handlers = ['fetchAtsJobs', 'sendDailyMail', 'gunlukMail']; // gunlukMail: legacy trigger from the first version
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (handlers.indexOf(t.getHandlerFunction()) !== -1) ScriptApp.deleteTrigger(t);
   });

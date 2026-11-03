@@ -1,16 +1,16 @@
 # Sheet schema
 
 Tab names are set in `apps-script/Config.gs` (`CONFIG.SHEETS`) and in the agent
-prompt. Column names below are matched by header text, so keep them as is.
+prompt. Columns are matched by header text, so keep the headers as below.
 
-## `good_companies_with_careers.csv`: company list (edited by hand)
+## `companies` (edited by hand)
 
-| Col | Header | Notes |
-|---|---|---|
-| A | company name | Required |
-| B | career page | Optional. An ATS URL here is used if D has no fetchable source |
-| C | not | Free-text note. "duplicate of …" makes the agent skip the row |
-| D | ilan kaynağı (ATS) | Optional. `type: url`, several separated by ` | `. Text after the URL is ignored |
+| Header | Notes |
+|---|---|
+| company | Required |
+| careers_page | Optional. An ATS URL here is used if job_source has no fetchable source |
+| note | Free text. A note saying "duplicate" makes the agent skip the row |
+| job_source | Optional. `type: url`, several separated by ` | `. Text after the URL is ignored |
 
 Fetchable `type`s and the URL they expect:
 
@@ -26,35 +26,38 @@ Fetchable `type`s and the URL they expect:
 
 Any other label (e.g. `comeet: …`) is left to the agent.
 
-## `kisiler`: people (edited by hand)
+## `people` (edited by hand)
 
 | Header | Used by | Notes |
 |---|---|---|
-| isim | all | Must match `kimin için` in `ilanlar` |
+| name | all | Must match `person` in `postings` |
 | email | Mail.gs | Where that person's mail goes |
-| aktif | all | `evet` / `hayır` |
-| admin | Mail.gs | `evet` for the owner: gets the unreadable-company list and the sheet link |
-| cv_kaynagi | agent | `drive klasör: <id>`, `drive dosya: <id>`, a Drive link, or `-` |
-| profil | agent | Background in plain text |
-| hedef_roller | agent | Roles and level that fit |
-| haric_tutulanlar | agent | Roles to exclude |
-| ozel_kurallar | agent | Any extra rule, e.g. how to fill `hangi CV` or a tag to add |
-| not | — | Free text |
+| active | all | `yes` / `no` |
+| admin | Mail.gs | `yes` for the owner: gets the unreadable-company list and the sheet link |
+| cv_source | agent | `drive folder: <id>`, `drive file: <id>`, a Drive link, or `-` |
+| profile | agent | Background in plain text |
+| target_roles | agent | Roles and level that fit |
+| exclusions | agent | Roles to leave out |
+| special_rules | agent | Any extra rule, e.g. how to fill `cv` or a tag to add to `reason` |
+| notes | — | Free text |
 
-## `ilanlar`: matched postings (append-only, written by the agent)
+## `postings` (append-only, written by the agent)
 
-`tarih | şirket | pozisyon | link | kimin için | lokasyon | hangi CV | neden uygun | link durumu`
+`date | company | title | link | person | location | cv | reason | link_status`
 
-`tarih` is `YYYY-MM-DD` text. Mail.gs sends the rows whose `tarih` is today.
+`date` is `YYYY-MM-DD` text. Mail.gs sends the rows whose `date` is today.
+`link_status` is `open` when written; older rows may say `closed (…)` or `unverified (…)` after a manual link check.
 
-## `tarama`: run log (append-only, written by the agent)
+## `scan_log` (append-only, written by the agent)
 
-`tarih | okunamayan şirketler` — one row per run; `-` when every company was read.
+`date | unreadable_companies` — one row per run; `-` when every company was read.
 
-## `ham_ilanlar`: raw postings (rewritten daily by Fetch.gs)
+## `raw_postings` (rewritten daily by Fetch.gs)
 
-`tarih | şirket | pozisyon | lokasyon | link | kaynak`
+`date | company | title | location | link | source`
 
-## `ats_kapsam`: fetch coverage (rewritten daily by Fetch.gs)
+## `fetch_coverage` (rewritten daily by Fetch.gs)
 
-`tarih | şirket | kaynak | url | durum (ok/hata) | toplam ilan | israil ilanı | hata`
+`date | company | source | url | status | total_postings | israel_postings | error`
+
+`status` is `ok` or `error`.

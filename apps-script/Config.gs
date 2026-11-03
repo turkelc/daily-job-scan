@@ -6,12 +6,12 @@ var CONFIG = {
   TIMEZONE: 'Asia/Jerusalem',
 
   SHEETS: {
-    COMPANIES: 'good_companies_with_careers.csv', // company list (A: name, B: careers page, C: note, D: job source)
-    PEOPLE: 'kisiler',        // one row per person who gets matches
-    POSTINGS: 'ilanlar',      // matched postings, written by the Claude agent
-    SCAN_LOG: 'tarama',       // one row per agent run: companies it could not read
-    RAW: 'ham_ilanlar',       // all Israel postings fetched from ATS APIs today (rewritten each run)
-    COVERAGE: 'ats_kapsam'    // per company + source: ok / error, counts
+    COMPANIES: 'companies',          // company, careers_page, note, job_source (edited by hand)
+    PEOPLE: 'people',                // one row per person who gets matches (edited by hand)
+    POSTINGS: 'postings',            // matched postings, appended by the Claude agent
+    SCAN_LOG: 'scan_log',            // one row per agent run: companies it could not read
+    RAW: 'raw_postings',             // Israel postings fetched from ATS APIs today (rewritten daily)
+    COVERAGE: 'fetch_coverage'       // per company + source: ok / error, counts (rewritten daily)
   },
 
   FETCH_HOUR: 15, // fetchAtsJobs runs between 15:00 and 16:00, before the agent (16:41)
@@ -22,7 +22,19 @@ var CONFIG = {
 
   USER_AGENT: 'Mozilla/5.0 (compatible; job-scan Apps Script)',
   WORKDAY_MAX: 200, // max postings to page through per Workday site
-  AMAZON_MAX: 300
+  AMAZON_MAX: 300,
+
+  // Email copy. {name}, {count} and {sender} are filled in.
+  MAIL_TEXT: {
+    ADMIN_SUBJECT: 'New job postings - {date}',
+    PERSON_SUBJECT: 'New job postings for you - {date}',
+    ADMIN_INTRO: '{count} new postings today.',
+    PERSON_INTRO: 'Hi {name}, here are {count} new postings that fit you today. {sender}',
+    NONE_TODAY: 'No new postings today.',
+    UNREADABLE_TITLE: 'Companies that could not be read (check manually):',
+    SHEET_LINK: 'Full list',
+    COLUMNS: { company: 'Company', title: 'Title', location: 'Location', cv: 'CV', reason: 'Why it fits' }
+  }
 };
 
 function today_() {
@@ -47,15 +59,15 @@ function readTable_(name) {
   });
 }
 
-/** Active people from the 'kisiler' tab: [{name, email, admin}] */
+/** Active people from the people tab: [{name, email, admin}] */
 function readPeople_() {
   return readTable_(CONFIG.SHEETS.PEOPLE)
-    .filter(function (p) { return p.isim && p.email && isYes_(p.aktif); })
-    .map(function (p) { return { name: p.isim, email: p.email, admin: isYes_(p.admin) }; });
+    .filter(function (p) { return p.name && p.email && isYes_(p.active); })
+    .map(function (p) { return { name: p.name, email: p.email, admin: isYes_(p.admin) }; });
 }
 
 function isYes_(v) {
-  return /^(evet|yes|true|1|x)$/i.test(String(v).trim());
+  return /^(yes|y|true|1|x)$/i.test(String(v).trim());
 }
 
 /** Clears a tab (creating it if missing) and writes header + rows. */
@@ -67,6 +79,13 @@ function writeTab_(name, header, rows) {
   sh.getRange(1, 1, all.length, header.length).setValues(all);
   sh.setFrozenRows(1);
   sh.getRange(1, 1, 1, header.length).setFontWeight('bold');
+}
+
+/** Replaces {key} placeholders in a template. */
+function fill_(template, values) {
+  return String(template).replace(/\{(\w+)\}/g, function (m, k) {
+    return values[k] === undefined ? m : values[k];
+  });
 }
 
 function escapeHtml_(s) {

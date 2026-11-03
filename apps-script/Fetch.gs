@@ -1,9 +1,9 @@
 /**
  * Pulls open postings straight from public ATS APIs (no API keys needed) and
- * writes the Israel-based ones to the 'ham_ilanlar' tab. The Claude agent reads
+ * writes the Israel-based ones to the raw_postings tab. The Claude agent reads
  * that tab instead of browsing every careers page, which keeps its usage low.
  *
- * Supported sources in column D of the company list, written as "type: url",
+ * Supported sources in the job_source column of the companies tab, written as "type: url",
  * several separated by " | ":
  *   greenhouse, lever, ashby, workable, breezy, workday, amazon
  * Anything else (comeet, own careers pages, ...) is left to the agent.
@@ -13,14 +13,14 @@ var FETCHABLE_TYPES = ['greenhouse', 'lever', 'ashby', 'workable', 'breezy', 'wo
 
 function fetchAtsJobs() {
   var date = today_();
-  var companies = sheet_(CONFIG.SHEETS.COMPANIES).getDataRange().getDisplayValues().slice(1);
+  var companies = readTable_(CONFIG.SHEETS.COMPANIES);
   var raw = [];
   var coverage = [];
 
-  companies.forEach(function (r) {
-    var name = String(r[0] || '').trim();
+  companies.forEach(function (c) {
+    var name = c.company;
     if (!name) return;
-    var sources = parseSources_(String(r[3] || ''), String(r[1] || ''));
+    var sources = parseSources_(c.job_source || '', c.careers_page || '');
     sources.forEach(function (s) {
       if (FETCHABLE_TYPES.indexOf(s.type) === -1) return;
       try {
@@ -31,21 +31,21 @@ function fetchAtsJobs() {
         });
         coverage.push([date, name, s.type, s.url, 'ok', jobs.length, israel.length, '']);
       } catch (e) {
-        coverage.push([date, name, s.type, s.url, 'hata', 0, 0, String(e.message || e).slice(0, 200)]);
+        coverage.push([date, name, s.type, s.url, 'error', 0, 0, String(e.message || e).slice(0, 200)]);
       }
     });
   });
 
-  writeTab_(CONFIG.SHEETS.RAW, ['tarih', 'şirket', 'pozisyon', 'lokasyon', 'link', 'kaynak'], raw);
+  writeTab_(CONFIG.SHEETS.RAW, ['date', 'company', 'title', 'location', 'link', 'source'], raw);
   writeTab_(CONFIG.SHEETS.COVERAGE,
-    ['tarih', 'şirket', 'kaynak', 'url', 'durum', 'toplam ilan', 'israil ilanı', 'hata'], coverage);
-  Logger.log('İsrail ilanı: ' + raw.length + ' | kaynak: ' + coverage.length +
-    ' | hata: ' + coverage.filter(function (c) { return c[4] === 'hata'; }).length);
+    ['date', 'company', 'source', 'url', 'status', 'total_postings', 'israel_postings', 'error'], coverage);
+  Logger.log('Israel postings: ' + raw.length + ' | sources: ' + coverage.length +
+    ' | errors: ' + coverage.filter(function (c) { return c[4] === 'error'; }).length);
 }
 
 /**
- * Column D ("greenhouse: https://... | comeet: https://...") plus, as a fallback,
- * an ATS URL in column B. Returns [{type, url}].
+ * The job_source column ("greenhouse: https://... | comeet: https://...") plus, as a
+ * fallback, an ATS URL in the careers_page column. Returns [{type, url}].
  */
 function parseSources_(d, b) {
   var out = [];
@@ -95,7 +95,7 @@ var FETCHERS = {
 
   greenhouse: function (url) {
     var m = url.match(/boards\/([^\/?#\s]+)/) || url.match(/greenhouse\.io\/([^\/?#\s]+)/);
-    if (!m) throw new Error('greenhouse slug yok');
+    if (!m) throw new Error('no greenhouse slug in url');
     var slug = m[1];
     var eu = /\.eu\.greenhouse\.io/i.test(url);
     var hosts = eu ? ['boards-api.eu.greenhouse.io', 'boards-api.greenhouse.io']
@@ -118,7 +118,7 @@ var FETCHERS = {
 
   lever: function (url) {
     var m = url.match(/postings\/([^\/?#\s]+)/) || url.match(/lever\.co\/([^\/?#\s]+)/);
-    if (!m) throw new Error('lever slug yok');
+    if (!m) throw new Error('no lever slug in url');
     var host = /\.eu\.lever\.co/i.test(url) ? 'api.eu.lever.co' : 'api.lever.co';
     var data = httpJson_('https://' + host + '/v0/postings/' + m[1] + '?mode=json');
     return (data || []).map(function (j) {
@@ -133,7 +133,7 @@ var FETCHERS = {
 
   ashby: function (url) {
     var m = url.match(/job-board\/([^\/?#\s]+)/) || url.match(/ashbyhq\.com\/([^\/?#\s]+)/);
-    if (!m) throw new Error('ashby slug yok');
+    if (!m) throw new Error('no ashby slug in url');
     var data = httpJson_('https://api.ashbyhq.com/posting-api/job-board/' + m[1]);
     return (data.jobs || []).map(function (j) {
       var secondary = (j.secondaryLocations || []).map(function (s) { return s.location; });
@@ -148,7 +148,7 @@ var FETCHERS = {
 
   workable: function (url) {
     var m = url.match(/accounts\/([^\/?#\s]+)/) || url.match(/workable\.com\/([^\/?#\s]+)/);
-    if (!m) throw new Error('workable slug yok');
+    if (!m) throw new Error('no workable slug in url');
     var data = httpJson_('https://apply.workable.com/api/v1/widget/accounts/' + m[1]);
     return (data.jobs || []).map(function (j) {
       var locs = (j.locations || []).map(function (l) { return joinLoc_([l.city, l.country]); });
@@ -162,7 +162,7 @@ var FETCHERS = {
 
   breezy: function (url) {
     var m = url.match(/https?:\/\/([^.\/]+)\.breezy\.hr/i);
-    if (!m) throw new Error('breezy slug yok');
+    if (!m) throw new Error('no breezy slug in url');
     var data = httpJson_('https://' + m[1] + '.breezy.hr/json');
     return (data || []).map(function (j) {
       var l = j.location || {};
@@ -177,7 +177,7 @@ var FETCHERS = {
   workday: function (url) {
     // https://{tenant}.wd{n}.myworkdayjobs.com/[en-US/]{site}
     var m = url.match(/https?:\/\/(([^.\/]+)\.wd\d+\.myworkdayjobs\.com)\/(?:[a-z]{2}-[A-Z]{2}\/)?([^\/?#\s]+)/);
-    if (!m) throw new Error('workday url çözülemedi');
+    if (!m) throw new Error('cannot parse workday url');
     var host = m[1], tenant = m[2], site = m[3];
     var api = 'https://' + host + '/wday/cxs/' + tenant + '/' + site + '/jobs';
     var jobs = [];
@@ -225,6 +225,6 @@ var FETCHERS = {
 function testFetch() {
   fetchAtsJobs();
   readTable_(CONFIG.SHEETS.COVERAGE).forEach(function (c) {
-    Logger.log([c['şirket'], c.kaynak, c.durum, c['toplam ilan'], c['israil ilanı'], c.hata].join(' | '));
+    Logger.log([c.company, c.source, c.status, c.total_postings, c.israel_postings, c.error].join(' | '));
   });
 }
