@@ -1,0 +1,230 @@
+/**
+ * Pulls open postings straight from public ATS APIs (no API keys needed) and
+ * writes the Israel-based ones to the 'ham_ilanlar' tab. The Claude agent reads
+ * that tab instead of browsing every careers page, which keeps its usage low.
+ *
+ * Supported sources in column D of the company list, written as "type: url",
+ * several separated by " | ":
+ *   greenhouse, lever, ashby, workable, breezy, workday, amazon
+ * Anything else (comeet, own careers pages, ...) is left to the agent.
+ */
+
+var FETCHABLE_TYPES = ['greenhouse', 'lever', 'ashby', 'workable', 'breezy', 'workday', 'amazon'];
+
+function fetchAtsJobs() {
+  var date = today_();
+  var companies = sheet_(CONFIG.SHEETS.COMPANIES).getDataRange().getDisplayValues().slice(1);
+  var raw = [];
+  var coverage = [];
+
+  companies.forEach(function (r) {
+    var name = String(r[0] || '').trim();
+    if (!name) return;
+    var sources = parseSources_(String(r[3] || ''), String(r[1] || ''));
+    sources.forEach(function (s) {
+      if (FETCHABLE_TYPES.indexOf(s.type) === -1) return;
+      try {
+        var jobs = FETCHERS[s.type](s.url);
+        var israel = jobs.filter(isIsraelJob_);
+        israel.forEach(function (j) {
+          raw.push([date, name, j.title, j.location, j.url, s.type]);
+        });
+        coverage.push([date, name, s.type, s.url, 'ok', jobs.length, israel.length, '']);
+      } catch (e) {
+        coverage.push([date, name, s.type, s.url, 'hata', 0, 0, String(e.message || e).slice(0, 200)]);
+      }
+    });
+  });
+
+  writeTab_(CONFIG.SHEETS.RAW, ['tarih', 'şirket', 'pozisyon', 'lokasyon', 'link', 'kaynak'], raw);
+  writeTab_(CONFIG.SHEETS.COVERAGE,
+    ['tarih', 'şirket', 'kaynak', 'url', 'durum', 'toplam ilan', 'israil ilanı', 'hata'], coverage);
+  Logger.log('İsrail ilanı: ' + raw.length + ' | kaynak: ' + coverage.length +
+    ' | hata: ' + coverage.filter(function (c) { return c[4] === 'hata'; }).length);
+}
+
+/**
+ * Column D ("greenhouse: https://... | comeet: https://...") plus, as a fallback,
+ * an ATS URL in column B. Returns [{type, url}].
+ */
+function parseSources_(d, b) {
+  var out = [];
+  String(d).split('|').forEach(function (part) {
+    var m = part.match(/^\s*([^:|]+?)\s*:\s*(https?:\/\/\S+)/i);
+    if (m) out.push({ type: m[1].trim().toLowerCase(), url: m[2] });
+  });
+  var hasFetchable = out.some(function (s) { return FETCHABLE_TYPES.indexOf(s.type) !== -1; });
+  if (!hasFetchable && b) {
+    var t = detectType_(b);
+    if (t) out.push({ type: t, url: b.trim() });
+  }
+  return out;
+}
+
+function detectType_(url) {
+  if (/greenhouse\.io/i.test(url)) return 'greenhouse';
+  if (/lever\.co/i.test(url)) return 'lever';
+  if (/ashbyhq\.com/i.test(url)) return 'ashby';
+  if (/workable\.com/i.test(url)) return 'workable';
+  if (/\.breezy\.hr/i.test(url)) return 'breezy';
+  if (/myworkdayjobs\.com/i.test(url)) return 'workday';
+  return null;
+}
+
+function isIsraelJob_(j) {
+  return j.assumeIsrael === true || CONFIG.ISRAEL_PATTERN.test(j.location || '');
+}
+
+function httpJson_(url, options) {
+  var opts = options || {};
+  opts.muteHttpExceptions = true;
+  opts.headers = opts.headers || {};
+  opts.headers['User-Agent'] = CONFIG.USER_AGENT;
+  opts.headers['Accept'] = 'application/json';
+  var res = UrlFetchApp.fetch(url, opts);
+  var code = res.getResponseCode();
+  if (code !== 200) throw new Error('HTTP ' + code + ' ' + url);
+  return JSON.parse(res.getContentText());
+}
+
+function joinLoc_(parts) {
+  return parts.filter(function (p) { return p; }).join(', ');
+}
+
+var FETCHERS = {
+
+  greenhouse: function (url) {
+    var m = url.match(/boards\/([^\/?#\s]+)/) || url.match(/greenhouse\.io\/([^\/?#\s]+)/);
+    if (!m) throw new Error('greenhouse slug yok');
+    var slug = m[1];
+    var eu = /\.eu\.greenhouse\.io/i.test(url);
+    var hosts = eu ? ['boards-api.eu.greenhouse.io', 'boards-api.greenhouse.io']
+                   : ['boards-api.greenhouse.io', 'boards-api.eu.greenhouse.io'];
+    var data, lastErr;
+    for (var i = 0; i < hosts.length && !data; i++) {
+      try { data = httpJson_('https://' + hosts[i] + '/v1/boards/' + slug + '/jobs'); }
+      catch (e) { lastErr = e; }
+    }
+    if (!data) throw lastErr;
+    return (data.jobs || []).map(function (j) {
+      var offices = (j.offices || []).map(function (o) { return o.name; });
+      return {
+        title: j.title,
+        location: joinLoc_([j.location && j.location.name].concat(offices)),
+        url: j.absolute_url
+      };
+    });
+  },
+
+  lever: function (url) {
+    var m = url.match(/postings\/([^\/?#\s]+)/) || url.match(/lever\.co\/([^\/?#\s]+)/);
+    if (!m) throw new Error('lever slug yok');
+    var host = /\.eu\.lever\.co/i.test(url) ? 'api.eu.lever.co' : 'api.lever.co';
+    var data = httpJson_('https://' + host + '/v0/postings/' + m[1] + '?mode=json');
+    return (data || []).map(function (j) {
+      var c = j.categories || {};
+      return {
+        title: j.text,
+        location: joinLoc_([c.location].concat(c.allLocations || []).concat([j.country])),
+        url: j.hostedUrl
+      };
+    });
+  },
+
+  ashby: function (url) {
+    var m = url.match(/job-board\/([^\/?#\s]+)/) || url.match(/ashbyhq\.com\/([^\/?#\s]+)/);
+    if (!m) throw new Error('ashby slug yok');
+    var data = httpJson_('https://api.ashbyhq.com/posting-api/job-board/' + m[1]);
+    return (data.jobs || []).map(function (j) {
+      var secondary = (j.secondaryLocations || []).map(function (s) { return s.location; });
+      var country = j.address && j.address.postalAddress && j.address.postalAddress.addressCountry;
+      return {
+        title: j.title,
+        location: joinLoc_([j.location].concat(secondary).concat([country])),
+        url: j.jobUrl
+      };
+    });
+  },
+
+  workable: function (url) {
+    var m = url.match(/accounts\/([^\/?#\s]+)/) || url.match(/workable\.com\/([^\/?#\s]+)/);
+    if (!m) throw new Error('workable slug yok');
+    var data = httpJson_('https://apply.workable.com/api/v1/widget/accounts/' + m[1]);
+    return (data.jobs || []).map(function (j) {
+      var locs = (j.locations || []).map(function (l) { return joinLoc_([l.city, l.country]); });
+      return {
+        title: j.title,
+        location: joinLoc_([j.city, j.state, j.country].concat(locs)),
+        url: j.url || j.shortlink || j.application_url
+      };
+    });
+  },
+
+  breezy: function (url) {
+    var m = url.match(/https?:\/\/([^.\/]+)\.breezy\.hr/i);
+    if (!m) throw new Error('breezy slug yok');
+    var data = httpJson_('https://' + m[1] + '.breezy.hr/json');
+    return (data || []).map(function (j) {
+      var l = j.location || {};
+      return {
+        title: j.name,
+        location: joinLoc_([l.name, l.city, l.country && l.country.name]),
+        url: j.url
+      };
+    });
+  },
+
+  workday: function (url) {
+    // https://{tenant}.wd{n}.myworkdayjobs.com/[en-US/]{site}
+    var m = url.match(/https?:\/\/(([^.\/]+)\.wd\d+\.myworkdayjobs\.com)\/(?:[a-z]{2}-[A-Z]{2}\/)?([^\/?#\s]+)/);
+    if (!m) throw new Error('workday url çözülemedi');
+    var host = m[1], tenant = m[2], site = m[3];
+    var api = 'https://' + host + '/wday/cxs/' + tenant + '/' + site + '/jobs';
+    var jobs = [];
+    for (var offset = 0; offset < CONFIG.WORKDAY_MAX; offset += 20) {
+      var data = httpJson_(api, {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({ appliedFacets: {}, limit: 20, offset: offset, searchText: 'Israel' })
+      });
+      var page = data.jobPostings || [];
+      page.forEach(function (j) {
+        jobs.push({
+          title: j.title,
+          location: j.locationsText || '',
+          url: 'https://' + host + '/' + site + j.externalPath,
+          // Results come from an "Israel" search; multi-location postings show
+          // only "2 Locations", so keep them and let the agent confirm.
+          assumeIsrael: !CONFIG.ISRAEL_PATTERN.test(j.locationsText || '') && /locations/i.test(j.locationsText || '')
+        });
+      });
+      if (page.length < 20 || (data.total && offset + 20 >= data.total)) break;
+    }
+    return jobs;
+  },
+
+  amazon: function () {
+    var jobs = [];
+    for (var offset = 0; offset < CONFIG.AMAZON_MAX; offset += 100) {
+      var data = httpJson_('https://www.amazon.jobs/en/search.json?loc_query=Israel&result_limit=100&offset=' + offset);
+      var page = data.jobs || [];
+      page.forEach(function (j) {
+        jobs.push({
+          title: j.title,
+          location: joinLoc_([j.normalized_location || j.location, j.country_code]),
+          url: 'https://www.amazon.jobs' + j.job_path
+        });
+      });
+      if (page.length < 100) break;
+    }
+    return jobs;
+  }
+};
+
+/** Run once by hand after setup: fetches and logs which sources worked. */
+function testFetch() {
+  fetchAtsJobs();
+  readTable_(CONFIG.SHEETS.COVERAGE).forEach(function (c) {
+    Logger.log([c['şirket'], c.kaynak, c.durum, c['toplam ilan'], c['israil ilanı'], c.hata].join(' | '));
+  });
+}

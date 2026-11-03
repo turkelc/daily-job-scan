@@ -1,0 +1,5 @@
+{"apiVersion":"1","jobs":[
+ {"title":"Business Strategy Manager","location":"Tel Aviv","secondaryLocations":[],"department":"Strategy","isRemote":false,"jobUrl":"https://jobs.ashbyhq.com/moonactive/cc3c474c","applyUrl":"https://jobs.ashbyhq.com/moonactive/cc3c474c/application","address":{"postalAddress":{"addressLocality":"Tel Aviv","addressCountry":"Israel"}}},
+ {"title":"Senior Game Designer","location":"Kyiv","secondaryLocations":[{"location":"Warsaw"}],"isRemote":false,"jobUrl":"https://jobs.ashbyhq.com/moonactive/x1","address":{"postalAddress":{"addressCountry":"Ukraine"}}},
+ {"title":"Market Researcher","location":"Remote","secondaryLocations":[{"location":"Tel Aviv"}],"isRemote":true,"jobUrl":"https://jobs.ashbyhq.com/moonactive/537eb1da"}
+]}
