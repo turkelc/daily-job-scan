@@ -16,7 +16,7 @@ Fetchable `type`s and the URL they expect:
 
 | type | Example |
 |---|---|
-| greenhouse | `https://boards-api.greenhouse.io/v1/boards/<slug>/jobs` (EU boards: `boards-api.eu.greenhouse.io`; the other host is tried automatically) |
+| greenhouse | `https://boards-api.greenhouse.io/v1/boards/<slug>/jobs` (also for boards shown on `job-boards.eu.greenhouse.io`) |
 | lever | `https://api.lever.co/v0/postings/<slug>` or `api.eu.lever.co` |
 | ashby | `https://api.ashbyhq.com/posting-api/job-board/<slug>` |
 | workable | `https://apply.workable.com/<slug>/` |
@@ -60,4 +60,4 @@ Any other label (e.g. `comeet: …`) is left to the agent.
 
 `date | company | source | url | status | total_postings | israel_postings | error`
 
-`status` is `ok` or `error`.
+`status` is `ok`, `empty` (the board answered but listed nothing, which usually means a wrong or retired board) or `error`. Only `ok` counts as covered for the agent.

@@ -28,7 +28,7 @@ function makeSandbox({ tabs, routes }) {
   };
   const sandbox = {
     Logger: { log: (m) => logs.push(m) },
-    Utilities: { formatDate: () => '2026-11-03' },
+    Utilities: { formatDate: () => '2026-11-03', sleep: () => {} },
     SpreadsheetApp: { getActiveSpreadsheet: () => ss },
     MailApp: { sendEmail: (m) => sent.push(m) },
     UrlFetchApp: {
@@ -36,8 +36,9 @@ function makeSandbox({ tabs, routes }) {
         fetched.push({ url, opts });
         const route = routes.find((r) => r.match.test(url));
         const body = route ? route.body(url, opts) : null;
+        const code = body && body.__status ? body.__status : (body === null ? 404 : 200);
         return {
-          getResponseCode: () => (body === null ? 404 : 200),
+          getResponseCode: () => code,
           getContentText: () => JSON.stringify(body)
         };
       }
@@ -108,13 +109,15 @@ const companyTab = [
   ['Unity', '', '', 'workday: https://unitytech.wd1.myworkdayjobs.com/Unity'],
   ['Amazon', '', '', 'amazon: https://www.amazon.jobs/en/search.json?loc_query=Israel'],
   ['Broken', '', '', 'greenhouse: https://boards-api.greenhouse.io/v1/boards/doesnotexist/jobs'],
+  ['Empty', '', '', 'greenhouse: https://boards-api.greenhouse.io/v1/boards/emptyboard/jobs'],
   ['Wix', 'https://careers.wix.com/', '', ''],
   ['', '', '', '']
 ];
 const routes = [
   { match: /boards-api\.greenhouse\.io\/v1\/boards\/melio\/jobs/, body: () => fx('greenhouse.json') },
-  // Aidoc only answers on the EU host
-  { match: /boards-api\.eu\.greenhouse\.io\/v1\/boards\/aidocmedical\/jobs/, body: () => fx('greenhouse.json') },
+  // EU boards are read through the main API host too
+  { match: /^https:\/\/boards-api\.greenhouse\.io\/v1\/boards\/aidocmedical\/jobs/, body: () => fx('greenhouse.json') },
+  { match: /boards-api\.greenhouse\.io\/v1\/boards\/emptyboard\/jobs/, body: () => ({ jobs: [] }) },
   { match: /api\.eu\.lever\.co\/v0\/postings\/mobileye\?mode=json/, body: () => fx('lever.json') },
   { match: /api\.ashbyhq\.com\/posting-api\/job-board\/moonactive$/, body: () => fx('ashby.json') },
   { match: /apply\.workable\.com\/api\/v1\/widget\/accounts\/atera$/, body: () => fx('workable.json') },
@@ -169,12 +172,49 @@ test('fetchAtsJobs: coverage tab records ok / error, skips comeet and plain page
   assert.strictEqual(row('Melio')[0][6], '2');   // israel
   assert.strictEqual(row('Atera').length, 1);    // workable only; comeet skipped
   assert.strictEqual(row('Wix').length, 0);
+  assert.strictEqual(row('Empty')[0][4], 'empty');      // zero postings is suspicious, not covered
+  assert.strictEqual(row('Voltify')[0][4], 'ok');      // has postings, none in Israel
+  assert.ok(!fetched.some((f) => /boards-api\.eu\./.test(f.url)), 'no EU API host');
   assert.ok(!fetched.some((f) => /comeet/.test(f.url)));
   // Unity paged twice through Workday with an Israel search
   const wd = fetched.filter((f) => /wday\/cxs/.test(f.url));
   assert.strictEqual(wd.length, 2);
   assert.strictEqual(JSON.parse(wd[0].opts.payload).searchText, 'Israel');
   assert.strictEqual(wd[0].opts.method, 'post');
+});
+
+test('httpJson_: retries on HTTP 429 and then succeeds', () => {
+  let calls = 0;
+  const { sandbox } = makeSandbox({ tabs: {}, routes: [
+    { match: /apply\.workable\.com\/api\/v1\/widget\/accounts\/atera$/, body: () => (++calls < 3 ? { __status: 429 } : fx('workable.json')) }
+  ] });
+  const jobs = sandbox.FETCHERS.workable('https://apply.workable.com/atera/');
+  assert.strictEqual(calls, 3);
+  assert.strictEqual(jobs.length, 2);
+});
+
+test('httpJson_: gives up after HTTP_ATTEMPTS and reports the status', () => {
+  let calls = 0;
+  const { sandbox } = makeSandbox({ tabs: {}, routes: [
+    { match: /apply\.workable\.com/, body: () => { calls++; return { __status: 429 }; } }
+  ] });
+  assert.throws(() => sandbox.FETCHERS.workable('https://apply.workable.com/atera/'), /HTTP 429/);
+  assert.strictEqual(calls, 3);
+});
+
+test('httpJson_: does not retry a 404', () => {
+  let calls = 0;
+  const { sandbox } = makeSandbox({ tabs: {}, routes: [
+    { match: /boards-api\.greenhouse\.io/, body: () => { calls++; return null; } }
+  ] });
+  assert.throws(() => sandbox.FETCHERS.greenhouse('https://boards-api.greenhouse.io/v1/boards/x/jobs'), /HTTP 404/);
+  assert.strictEqual(calls, 1);
+});
+
+test('amazon: asks for Israel-only results', () => {
+  const { sandbox, fetched } = makeSandbox({ tabs: {}, routes: [{ match: /amazon\.jobs/, body: () => fx('amazon.json') }] });
+  sandbox.FETCHERS.amazon();
+  assert.ok(/normalized_country_code%5B%5D=ISR/.test(fetched[0].url));
 });
 
 // ---------- mail ----------

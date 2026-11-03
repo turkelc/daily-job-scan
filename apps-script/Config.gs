@@ -21,8 +21,9 @@ var CONFIG = {
   ISRAEL_PATTERN: /israel|tel[\s-]?aviv|herzl?iya|herzelia|ramat[\s-]?gan|petah?[\s-]?tikv?a|haifa|jerusalem|netanya|ra'?anana|rehovot|yokneam|hod[\s-]?hasharon|kfar[\s-]?saba|bnei[\s-]?brak|givatayim|ness[\s-]?ziona|rosh[\s-]?ha'?ayin|airport[\s-]?city|be'?er[\s-]?sheva|caesarea|or[\s-]?yehuda|\bIL\b|\bISR\b/i,
 
   USER_AGENT: 'Mozilla/5.0 (compatible; daily-job-scan Apps Script)',
-  WORKDAY_MAX: 200, // max postings to page through per Workday site
+  WORKDAY_MAX: 500, // max postings to page through per Workday site
   AMAZON_MAX: 300,
+  HTTP_ATTEMPTS: 3,  // tries per request on HTTP 429 / 5xx, with a growing pause
 
   // Email copy. {name}, {count} and {sender} are filled in.
   MAIL_TEXT: {

@@ -47,8 +47,9 @@ a posting fits a person, and checking that links are live.
    [clasp](#deploying-with-clasp). Then run `setup` once and approve the
    permissions. It creates the two daily triggers and removes old ones.
 3. **Check the fetchers.** Run `testFetch` once. The log lists every
-   company + source with `ok` / `error` and how many postings it found.
-   Fix or remove sources that error (usually a wrong board slug).
+   company + source with `ok` / `empty` / `error` and how many postings it
+   found. Fix or remove sources that error or come back empty (usually a wrong
+   board slug). Rate limits (HTTP 429) and server errors are retried.
 4. **Agent.** Create a scheduled Claude task that runs daily after the fetch
    and before the mail, with the Google Sheets and Google Drive connectors.
    Use [`agent/daily-scan-prompt.md`](agent/daily-scan-prompt.md) as its

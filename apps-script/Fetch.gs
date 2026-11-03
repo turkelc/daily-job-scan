@@ -29,7 +29,9 @@ function fetchAtsJobs() {
         israel.forEach(function (j) {
           raw.push([date, name, j.title, j.location, j.url, s.type]);
         });
-        coverage.push([date, name, s.type, s.url, 'ok', jobs.length, israel.length, '']);
+        // A board that returns nothing at all is more often a wrong or retired board than a
+        // company with zero openings, so it is marked 'empty' and the agent checks it itself.
+        coverage.push([date, name, s.type, s.url, jobs.length ? 'ok' : 'empty', jobs.length, israel.length, '']);
       } catch (e) {
         coverage.push([date, name, s.type, s.url, 'error', 0, 0, String(e.message || e).slice(0, 200)]);
       }
@@ -40,7 +42,8 @@ function fetchAtsJobs() {
   writeTab_(CONFIG.SHEETS.COVERAGE,
     ['date', 'company', 'source', 'url', 'status', 'total_postings', 'israel_postings', 'error'], coverage);
   Logger.log('Israel postings: ' + raw.length + ' | sources: ' + coverage.length +
-    ' | errors: ' + coverage.filter(function (c) { return c[4] === 'error'; }).length);
+    ' | errors: ' + coverage.filter(function (c) { return c[4] === 'error'; }).length +
+    ' | empty: ' + coverage.filter(function (c) { return c[4] === 'empty'; }).length);
 }
 
 /**
@@ -81,8 +84,13 @@ function httpJson_(url, options) {
   opts.headers = opts.headers || {};
   opts.headers['User-Agent'] = CONFIG.USER_AGENT;
   opts.headers['Accept'] = 'application/json';
-  var res = UrlFetchApp.fetch(url, opts);
-  var code = res.getResponseCode();
+  var res, code;
+  for (var attempt = 1; attempt <= CONFIG.HTTP_ATTEMPTS; attempt++) {
+    res = UrlFetchApp.fetch(url, opts);
+    code = res.getResponseCode();
+    if (code !== 429 && code < 500) break;          // retry only rate limits and server errors
+    if (attempt < CONFIG.HTTP_ATTEMPTS) Utilities.sleep(2000 * attempt);
+  }
   if (code !== 200) throw new Error('HTTP ' + code + ' ' + url);
   return JSON.parse(res.getContentText());
 }
@@ -96,16 +104,8 @@ var FETCHERS = {
   greenhouse: function (url) {
     var m = url.match(/boards\/([^\/?#\s]+)/) || url.match(/greenhouse\.io\/([^\/?#\s]+)/);
     if (!m) throw new Error('no greenhouse slug in url');
-    var slug = m[1];
-    var eu = /\.eu\.greenhouse\.io/i.test(url);
-    var hosts = eu ? ['boards-api.eu.greenhouse.io', 'boards-api.greenhouse.io']
-                   : ['boards-api.greenhouse.io', 'boards-api.eu.greenhouse.io'];
-    var data, lastErr;
-    for (var i = 0; i < hosts.length && !data; i++) {
-      try { data = httpJson_('https://' + hosts[i] + '/v1/boards/' + slug + '/jobs'); }
-      catch (e) { lastErr = e; }
-    }
-    if (!data) throw lastErr;
+    // One public API host serves every board, including job-boards.eu.greenhouse.io ones.
+    var data = httpJson_('https://boards-api.greenhouse.io/v1/boards/' + m[1] + '/jobs');
     return (data.jobs || []).map(function (j) {
       var offices = (j.offices || []).map(function (o) { return o.name; });
       return {
@@ -206,7 +206,8 @@ var FETCHERS = {
   amazon: function () {
     var jobs = [];
     for (var offset = 0; offset < CONFIG.AMAZON_MAX; offset += 100) {
-      var data = httpJson_('https://www.amazon.jobs/en/search.json?loc_query=Israel&result_limit=100&offset=' + offset);
+      var data = httpJson_('https://www.amazon.jobs/en/search.json?normalized_country_code%5B%5D=ISR' +
+        '&loc_query=Israel&result_limit=100&sort=recent&offset=' + offset);
       var page = data.jobs || [];
       page.forEach(function (j) {
         jobs.push({
