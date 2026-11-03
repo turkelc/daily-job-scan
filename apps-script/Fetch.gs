@@ -5,11 +5,13 @@
  *
  * Supported sources in the job_source column of the companies tab, written as "type: url",
  * several separated by " | ":
- *   greenhouse, lever, ashby, workable, breezy, workday, amazon
- * Anything else (comeet, own careers pages, ...) is left to the agent.
+ *   greenhouse, lever, ashby, workable, breezy, workday, amazon, comeet-api
+ * The detected_source column, filled by Discover.gs, uses the same format.
+ * Anything else (a comeet board link without an API token, own careers pages, ...)
+ * is left to the agent.
  */
 
-var FETCHABLE_TYPES = ['greenhouse', 'lever', 'ashby', 'workable', 'breezy', 'workday', 'amazon'];
+var FETCHABLE_TYPES = ['greenhouse', 'lever', 'ashby', 'workable', 'breezy', 'workday', 'amazon', 'comeet-api'];
 
 function fetchAtsJobs() {
   var date = today_();
@@ -20,7 +22,7 @@ function fetchAtsJobs() {
   companies.forEach(function (c) {
     var name = c.company;
     if (!name) return;
-    var sources = parseSources_(c.job_source || '', c.careers_page || '');
+    var sources = parseSources_(c.job_source || '', c.careers_page || '', c.detected_source || '');
     sources.forEach(function (s) {
       if (FETCHABLE_TYPES.indexOf(s.type) === -1) return;
       try {
@@ -47,14 +49,20 @@ function fetchAtsJobs() {
 }
 
 /**
- * The job_source column ("greenhouse: https://... | comeet: https://...") plus, as a
- * fallback, an ATS URL in the careers_page column. Returns [{type, url}].
+ * Sources from job_source ("greenhouse: https://... | comeet: https://...") and
+ * detected_source, plus, as a fallback, an ATS URL in careers_page. Returns [{type, url}].
  */
-function parseSources_(d, b) {
+function parseSources_(d, b, e) {
   var out = [];
-  String(d).split('|').forEach(function (part) {
-    var m = part.match(/^\s*([^:|]+?)\s*:\s*(https?:\/\/\S+)/i);
-    if (m) out.push({ type: m[1].trim().toLowerCase(), url: m[2] });
+  var seen = {};
+  [d, e || ''].forEach(function (cell) {
+    String(cell).split('|').forEach(function (part) {
+      var m = part.match(/^\s*([^:|]+?)\s*:\s*(https?:\/\/\S+)/i);
+      if (m && !seen[m[2]]) {
+        seen[m[2]] = true;
+        out.push({ type: m[1].trim().toLowerCase(), url: m[2] });
+      }
+    });
   });
   var hasFetchable = out.some(function (s) { return FETCHABLE_TYPES.indexOf(s.type) !== -1; });
   if (!hasFetchable && b) {
@@ -201,6 +209,18 @@ var FETCHERS = {
       if (page.length < 20 || (data.total && offset + 20 >= data.total)) break;
     }
     return jobs;
+  },
+
+  'comeet-api': function (url) {
+    var data = httpJson_(url);
+    return (data || []).map(function (p) {
+      var l = p.location || {};
+      return {
+        title: p.name,
+        location: joinLoc_([l.name, l.city, l.country, l.is_remote ? 'Remote' : '']),
+        url: p.url_active_page || p.url_detected_page || p.url_comeet_hosted_page
+      };
+    });
   },
 
   amazon: function () {

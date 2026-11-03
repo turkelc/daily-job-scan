@@ -15,10 +15,20 @@ function makeSandbox({ tabs, routes }) {
   const makeSheet = (name) => ({
     getDataRange: () => ({ getDisplayValues: () => tabs[name] }),
     clearContents: () => { tabs[name] = []; },
-    getRange: (r, c, nr, nc) => ({
-      setValues: (vals) => { tabs[name] = vals.map((row) => row.map(String)); },
-      setFontWeight: () => {}
-    }),
+    getRange: (r, c, nr, nc) => {
+      const range = {
+        setValues: (vals) => { tabs[name] = vals.map((row) => row.map(String)); return range; },
+        setValue: (v) => {
+          while (tabs[name].length < r) tabs[name].push([]);
+          const row = tabs[name][r - 1];
+          while (row.length < c) row.push('');
+          row[c - 1] = String(v);
+          return range;
+        },
+        setFontWeight: () => range
+      };
+      return range;
+    },
     setFrozenRows: () => {}
   });
   const ss = {
@@ -32,6 +42,7 @@ function makeSandbox({ tabs, routes }) {
     SpreadsheetApp: { getActiveSpreadsheet: () => ss },
     MailApp: { sendEmail: (m) => sent.push(m) },
     UrlFetchApp: {
+      fetchAll: (reqs) => reqs.map((q) => sandbox.UrlFetchApp.fetch(q.url, q)),
       fetch: (url, opts) => {
         fetched.push({ url, opts });
         const route = routes.find((r) => r.match.test(url));
@@ -39,14 +50,14 @@ function makeSandbox({ tabs, routes }) {
         const code = body && body.__status ? body.__status : (body === null ? 404 : 200);
         return {
           getResponseCode: () => code,
-          getContentText: () => JSON.stringify(body)
+          getContentText: () => (typeof body === 'string' ? body : JSON.stringify(body))
         };
       }
     },
     ScriptApp: {}
   };
   vm.createContext(sandbox);
-  for (const f of ['Config.gs', 'Fetch.gs', 'Mail.gs', 'Setup.gs']) {
+  for (const f of ['Config.gs', 'Fetch.gs', 'Discover.gs', 'Mail.gs', 'Setup.gs']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'apps-script', f), 'utf8'), sandbox, { filename: f });
   }
   return { sandbox, tabs, sent, logs, fetched };
@@ -215,6 +226,93 @@ test('amazon: asks for Israel-only results', () => {
   const { sandbox, fetched } = makeSandbox({ tabs: {}, routes: [{ match: /amazon\.jobs/, body: () => fx('amazon.json') }] });
   sandbox.FETCHERS.amazon();
   assert.ok(/normalized_country_code%5B%5D=ISR/.test(fetched[0].url));
+});
+
+// ---------- discovery ----------
+const COMEET_EMBED = `<div id="careers"></div>
+<script type="text/javascript">
+window.comeetInit = function() {
+  COMEET.init({ "token": "6C6B32BF0C9F9DF04B49D85C9A6C3E3B", "company-uid": "85.003", "color": "278fe6" });
+};
+(function(d, s, id) { var js = d.createElement(s); js.id = id; js.src = "//www.comeet.co/careers-api/api.js"; })(document, "script", "comeet-jsapi");
+</script>`;
+
+test('detectAts_: finds each ATS and builds fetchable URLs', () => {
+  const { sandbox } = makeSandbox({ tabs: {}, routes: [] });
+  const one = (html) => JSON.parse(JSON.stringify(sandbox.detectAts_(html)));
+  assert.deepStrictEqual(one('<script src="https://boards.greenhouse.io/embed/job_board/js?for=Acme"></script>'),
+    [{ type: 'greenhouse', url: 'https://boards-api.greenhouse.io/v1/boards/acme/jobs' }]);
+  assert.deepStrictEqual(one('<a href="https://job-boards.eu.greenhouse.io/acmeil/jobs/123">x</a>'),
+    [{ type: 'greenhouse', url: 'https://boards-api.greenhouse.io/v1/boards/acmeil/jobs' }]);
+  assert.deepStrictEqual(one('<a href="https://jobs.eu.lever.co/acme/abc-1">x</a>'),
+    [{ type: 'lever', url: 'https://api.eu.lever.co/v0/postings/acme' }]);
+  assert.deepStrictEqual(one('<iframe src="https://jobs.ashbyhq.com/acme?embed=js"></iframe>'),
+    [{ type: 'ashby', url: 'https://api.ashbyhq.com/posting-api/job-board/acme' }]);
+  assert.deepStrictEqual(one('<a href="https://apply.workable.com/j/ABC">x</a><a href="https://apply.workable.com/acme/">all</a>'),
+    [{ type: 'workable', url: 'https://apply.workable.com/acme/' }]);
+  assert.deepStrictEqual(one('<a href="https://acme.breezy.hr/p/1">x</a>'),
+    [{ type: 'breezy', url: 'https://acme.breezy.hr/' }]);
+  assert.deepStrictEqual(one('<a href="https://acme.wd3.myworkdayjobs.com/en-US/AcmeCareers/job/x">x</a>'),
+    [{ type: 'workday', url: 'https://acme.wd3.myworkdayjobs.com/en-US/AcmeCareers' }]);
+  assert.deepStrictEqual(one(COMEET_EMBED),
+    [{ type: 'comeet-api', url: 'https://www.comeet.co/careers-api/2.0/company/85.003/positions?token=6C6B32BF0C9F9DF04B49D85C9A6C3E3B&details=false' }]);
+  assert.deepStrictEqual(one('<p>We are hiring! Send your CV.</p>'), []);
+});
+
+test('detectAts_: ignores a token that is far from any Comeet mention', () => {
+  const { sandbox } = makeSandbox({ tabs: {}, routes: [] });
+  const html = '<script>var cfg = { "token": "AAAAAAAAAAAAAAAAAAAA", "company-uid": "11.111" };</script>' +
+    ' '.repeat(5000) + '<footer>Powered by Comeet</footer>';
+  assert.strictEqual(sandbox.detectAts_(html).length, 0);
+});
+
+test('discoverSources: writes detected_source only for companies without a fetchable source', () => {
+  const tabs = { companies: [
+    ['company', 'careers_page', 'note', 'job_source'],
+    ['Known', 'https://known.example/careers', '', 'greenhouse: https://boards-api.greenhouse.io/v1/boards/known/jobs'],
+    ['Acme', 'https://acme.example/careers', '', ''],
+    ['Artlist', 'https://artlist.example/careers', '', 'comeet: https://www.comeet.com/jobs/artlist/85.003'],
+    ['Plain', 'https://plain.example/careers', '', ''],
+    ['NoPage', '', '', '']
+  ] };
+  const routes = [
+    { match: /acme\.example/, body: () => '<script src="https://boards.greenhouse.io/embed/job_board/js?for=acme"></script>' },
+    { match: /artlist\.example/, body: () => '<h1>Careers</h1>' },
+    { match: /comeet\.com\/jobs\/artlist/, body: () => COMEET_EMBED },
+    { match: /plain\.example/, body: () => '<p>Send your CV to jobs@plain.example</p>' }
+  ];
+  const { sandbox, fetched } = makeSandbox({ tabs, routes });
+  sandbox.discoverSources();
+  const t = tabs.companies;
+  assert.strictEqual(t[0][4], 'detected_source');
+  assert.strictEqual(t[1][4] || '', '', 'company with a fetchable job_source is not checked');
+  assert.ok(!fetched.some((f) => /known\.example/.test(f.url)));
+  assert.strictEqual(t[2][4], 'greenhouse: https://boards-api.greenhouse.io/v1/boards/acme/jobs');
+  assert.ok(/^comeet-api: https:\/\/www\.comeet\.co\/careers-api\/2\.0\/company\/85\.003\/positions\?token=/.test(t[3][4]), 'token read from the Comeet board page');
+  assert.strictEqual(t[4][4], 'none (checked 2026-11-03)');
+  assert.strictEqual(t[5][4] || '', '', 'no careers page, nothing to check');
+  // the hand-edited columns are untouched
+  assert.strictEqual(t[3][3], 'comeet: https://www.comeet.com/jobs/artlist/85.003');
+});
+
+test('fetchAtsJobs: uses detected_source, including the Comeet API', () => {
+  const tabs = { companies: [
+    ['company', 'careers_page', 'note', 'job_source', 'detected_source'],
+    ['Artlist', '', '', 'comeet: https://www.comeet.com/jobs/artlist/85.003',
+      'comeet-api: https://www.comeet.co/careers-api/2.0/company/85.003/positions?token=6C6B32BF0C9F9DF04B49D85C9A6C3E3B&details=false'],
+    ['Plain', '', '', '', 'none (checked 2026-11-03)']
+  ] };
+  const routes = [{ match: /comeet\.co\/careers-api\/2\.0\/company\/85\.003\/positions/, body: () => fx('comeet.json') }];
+  const { sandbox } = makeSandbox({ tabs, routes });
+  sandbox.fetchAtsJobs();
+  const raw = JSON.parse(JSON.stringify(tabs.raw_postings));
+  assert.deepStrictEqual(raw.slice(1).map((r) => [r[1], r[2], r[4], r[5]]), [
+    ['Artlist', 'Growth Product Analytics Team Lead', 'https://artlist.io/careers/13.E40', 'comeet-api']
+  ]);
+  const cov = tabs.fetch_coverage.slice(1);
+  assert.strictEqual(cov.length, 1, 'comeet board link itself is not fetched, "none" is ignored');
+  assert.strictEqual(cov[0][2], 'comeet-api');
+  assert.strictEqual(cov[0][4], 'ok');
 });
 
 // ---------- mail ----------

@@ -11,6 +11,7 @@ prompt. Columns are matched by header text, so keep the headers as below.
 | careers_page | Optional. An ATS URL here is used if job_source has no fetchable source |
 | note | Free text. A note saying "duplicate" makes the agent skip the row |
 | job_source | Optional. `type: url`, several separated by ` | `. Text after the URL is ignored |
+| detected_source | Written by `Discover.gs` (weekly), never by hand. Same format as job_source, or `none (checked <date>)` |
 
 Fetchable `type`s and the URL they expect:
 
@@ -23,8 +24,9 @@ Fetchable `type`s and the URL they expect:
 | breezy | `https://<slug>.breezy.hr/` |
 | workday | `https://<tenant>.wd<N>.myworkdayjobs.com/<site>` (searched for "Israel") |
 | amazon | `https://www.amazon.jobs/en/search.json?loc_query=Israel` |
+| comeet-api | `https://www.comeet.co/careers-api/2.0/company/<uid>/positions?token=<token>` (found by Discover.gs; the token is embedded in the company's careers page) |
 
-Any other label (e.g. `comeet: …`) is left to the agent.
+Any other label (e.g. a plain `comeet: <board link>`) is left to the agent, unless Discover.gs finds the Comeet API token for that company.
 
 ## `people` (edited by hand)
 

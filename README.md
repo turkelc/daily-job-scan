@@ -9,7 +9,8 @@ It runs on two pieces that each do what they are good at:
 
 | Part | Runs on | Job | Deterministic? |
 |---|---|---|---|
-| `apps-script/Fetch.gs` | Google Apps Script, daily ~15:00 | Pulls open postings from public ATS APIs (Greenhouse, Lever, Ashby, Workable, Breezy, Workday, Amazon) and keeps the Israel-based ones | Yes |
+| `apps-script/Discover.gs` | Google Apps Script, weekly (Sunday) | Reads each careers page without a known source and records which ATS it uses (incl. the Comeet API token) in `detected_source` | Yes |
+| `apps-script/Fetch.gs` | Google Apps Script, daily ~15:00 | Pulls open postings from public ATS APIs (Greenhouse, Lever, Ashby, Workable, Breezy, Workday, Amazon, Comeet) and keeps the Israel-based ones | Yes |
 | `agent/daily-scan-prompt.md` | A scheduled Claude agent, daily 16:41 | Covers companies the APIs can't (Comeet boards, own careers pages, big-company job sites), verifies links, matches postings to each person, logs new matches | No: reads and judges |
 | `apps-script/Mail.gs` | Google Apps Script, daily ~17:00 | Emails each person today's new matches; the admin also gets the list of companies that couldn't be read | Yes |
 
@@ -41,12 +42,14 @@ a posting fits a person, and checking that links are live.
 
 1. **Sheet.** Create the tabs described in [`docs/sheet-schema.md`](docs/sheet-schema.md).
    `raw_postings` and `fetch_coverage` are created by the script on its first run.
-2. **Apps Script.** In the sheet: *Extensions → Apps Script*. Add the four
+2. **Apps Script.** In the sheet: *Extensions → Apps Script*. Add the five
    `.gs` files from `apps-script/` and replace `appsscript.json` (enable
    "Show appsscript.json" in Project Settings), or push them with
    [clasp](#deploying-with-clasp). Then run `setup` once and approve the
-   permissions. It creates the two daily triggers and removes old ones.
-3. **Check the fetchers.** Run `testFetch` once. The log lists every
+   permissions. It creates the triggers (weekly discovery, daily fetch, daily
+   mail) and removes old ones.
+3. **Find sources and check the fetchers.** Run `testDiscover` once, then
+   `testFetch`. The log lists every
    company + source with `ok` / `empty` / `error` and how many postings it
    found. Fix or remove sources that error or come back empty (usually a wrong
    board slug). Rate limits (HTTP 429) and server errors are retried.
@@ -93,8 +96,8 @@ are rows in the sheet; the sheet ID goes only into the scheduled task.
 
 ## Limits
 
-- Comeet boards need a per-company token, so Comeet companies go through the
-  agent, which reads the company's own careers page.
+- Comeet's API needs a per-company token. Discover.gs reads it from the
+  careers page; when it can't, the agent reads the careers page itself.
 - Pages that only render in a browser and companies that post only on
   LinkedIn or Hebrew job boards can't be read; they show up in the admin's
   "couldn't read" list for a manual look.

@@ -6,7 +6,7 @@ var CONFIG = {
   TIMEZONE: 'Asia/Jerusalem',
 
   SHEETS: {
-    COMPANIES: 'companies',          // company, careers_page, note, job_source (edited by hand)
+    COMPANIES: 'companies',          // company, careers_page, note, job_source (by hand), detected_source (by Discover.gs)
     PEOPLE: 'people',                // one row per person who gets matches (edited by hand)
     POSTINGS: 'postings',            // matched postings, appended by the Claude agent
     SCAN_LOG: 'scan_log',            // one row per agent run: companies it could not read
@@ -14,6 +14,7 @@ var CONFIG = {
     COVERAGE: 'fetch_coverage'       // per company + source: ok / error, counts (rewritten daily)
   },
 
+  DISCOVER_HOUR: 13, // discoverSources runs on Sundays between 13:00 and 14:00
   FETCH_HOUR: 15, // fetchAtsJobs runs between 15:00 and 16:00, before the agent (16:41)
   MAIL_HOUR: 17,  // sendDailyMail runs between 17:00 and 18:00, after the agent
 
@@ -24,6 +25,7 @@ var CONFIG = {
   WORKDAY_MAX: 500, // max postings to page through per Workday site
   AMAZON_MAX: 300,
   HTTP_ATTEMPTS: 3,  // tries per request on HTTP 429 / 5xx, with a growing pause
+  DISCOVER_BATCH: 20, // careers pages fetched in parallel per batch by Discover.gs
 
   // Email copy. {name}, {count} and {sender} are filled in.
   MAIL_TEXT: {
