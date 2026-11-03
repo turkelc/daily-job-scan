@@ -1,0 +1,5 @@
+{"offset":0,"limit":100,"totalFound":3,"content":[
+ {"id":"744000140238949","name":"Bookkeeper","location":{"city":"Tel Aviv","region":"Tel Aviv District","country":"il","remote":false}},
+ {"id":"744000143165910","name":"Business Analyst - Channels","location":{"city":"Tel Aviv","country":"il","remote":false}},
+ {"id":"744000157667509","name":"Security Researcher","location":{"city":"Beer Sheva","country":"il","remote":true}}
+]}

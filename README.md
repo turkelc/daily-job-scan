@@ -10,7 +10,7 @@ It runs on two pieces that each do what they are good at:
 | Part | Runs on | Job | Deterministic? |
 |---|---|---|---|
 | `apps-script/Discover.gs` | Google Apps Script, weekly (Sunday) | Reads each careers page without a known source and records which ATS it uses (incl. the Comeet API token) in `detected_source` | Yes |
-| `apps-script/Fetch.gs` | Google Apps Script, daily ~15:00 | Pulls open postings from public ATS APIs (Greenhouse, Lever, Ashby, Workable, Breezy, Workday, Amazon, Comeet) and keeps the Israel-based ones | Yes |
+| `apps-script/Fetch.gs` | Google Apps Script, daily ~15:00 | Pulls open postings from public ATS APIs (Greenhouse, Lever, Ashby, Workable, Breezy, Workday, SmartRecruiters, Amazon, Comeet) and keeps the Israel-based ones | Yes |
 | `agent/daily-scan-prompt.md` | A scheduled Claude agent, daily 16:41 | Covers companies the APIs can't (Comeet boards, own careers pages, big-company job sites), verifies links, matches postings to each person, logs new matches | No: reads and judges |
 | `apps-script/Mail.gs` | Google Apps Script, daily ~17:00 | Emails each person today's new matches; the admin also gets the list of companies that couldn't be read | Yes |
 
@@ -63,7 +63,7 @@ a posting fits a person, and checking that links are live.
 - **A company:** add a row to `companies`. A name is enough; the agent finds
   the careers page. If you know the ATS, put it in `job_source` as `type: url`,
   e.g. `greenhouse: https://boards-api.greenhouse.io/v1/boards/acme/jobs`.
-  Fetchable types: `greenhouse lever ashby workable breezy workday amazon`.
+  Fetchable types: `greenhouse lever ashby workable breezy workday smartrecruiters amazon comeet-api`.
   Several sources: separate with ` | `.
 - **A person:** add a row to `people` with `active = yes`. Profile, target
   roles, exclusions and any special rules are plain text the agent follows.

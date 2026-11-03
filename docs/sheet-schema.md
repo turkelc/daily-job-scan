@@ -22,6 +22,7 @@ Fetchable `type`s and the URL they expect:
 | ashby | `https://api.ashbyhq.com/posting-api/job-board/<slug>` |
 | workable | `https://apply.workable.com/<slug>/` |
 | breezy | `https://<slug>.breezy.hr/` |
+| smartrecruiters | `https://careers.smartrecruiters.com/<Company>` |
 | workday | `https://<tenant>.wd<N>.myworkdayjobs.com/<site>` (searched for "Israel") |
 | amazon | `https://www.amazon.jobs/en/search.json?loc_query=Israel` |
 | comeet-api | `https://www.comeet.co/careers-api/2.0/company/<uid>/positions?token=<token>` (found by Discover.gs; the token is embedded in the company's careers page) |

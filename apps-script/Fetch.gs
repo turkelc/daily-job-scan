@@ -5,13 +5,13 @@
  *
  * Supported sources in the job_source column of the companies tab, written as "type: url",
  * several separated by " | ":
- *   greenhouse, lever, ashby, workable, breezy, workday, amazon, comeet-api
+ *   greenhouse, lever, ashby, workable, breezy, workday, smartrecruiters, amazon, comeet-api
  * The detected_source column, filled by Discover.gs, uses the same format.
  * Anything else (a comeet board link without an API token, own careers pages, ...)
  * is left to the agent.
  */
 
-var FETCHABLE_TYPES = ['greenhouse', 'lever', 'ashby', 'workable', 'breezy', 'workday', 'amazon', 'comeet-api'];
+var FETCHABLE_TYPES = ['greenhouse', 'lever', 'ashby', 'workable', 'breezy', 'workday', 'smartrecruiters', 'amazon', 'comeet-api'];
 
 function fetchAtsJobs() {
   var date = today_();
@@ -79,6 +79,7 @@ function detectType_(url) {
   if (/workable\.com/i.test(url)) return 'workable';
   if (/\.breezy\.hr/i.test(url)) return 'breezy';
   if (/myworkdayjobs\.com/i.test(url)) return 'workday';
+  if (/smartrecruiters\.com/i.test(url)) return 'smartrecruiters';
   return null;
 }
 
@@ -207,6 +208,32 @@ var FETCHERS = {
         });
       });
       if (page.length < 20 || (data.total && offset + 20 >= data.total)) break;
+    }
+    return jobs;
+  },
+
+  smartrecruiters: function (url) {
+    // https://careers.smartrecruiters.com/{company} or jobs.smartrecruiters.com/{company}/...
+    var m = url.match(/(?:careers|jobs)\.smartrecruiters\.com\/([^\/?#\s]+)/i) ||
+            url.match(/companies\/([^\/?#\s]+)/);
+    if (!m) throw new Error('no smartrecruiters company in url');
+    var company = m[1];
+    var jobs = [];
+    for (var offset = 0; offset < CONFIG.WORKDAY_MAX; offset += 100) {
+      // Filtered to Israel by the API; the country comes back as the code "il".
+      var data = httpJson_('https://api.smartrecruiters.com/v1/companies/' + company +
+        '/postings?country=il&limit=100&offset=' + offset);
+      var page = data.content || [];
+      page.forEach(function (j) {
+        var l = j.location || {};
+        jobs.push({
+          title: j.name,
+          location: joinLoc_([l.city, l.region, String(l.country || '').toLowerCase() === 'il' ? 'Israel' : l.country,
+                              l.remote ? 'Remote' : '']),
+          url: 'https://jobs.smartrecruiters.com/' + company + '/' + j.id
+        });
+      });
+      if (page.length < 100 || offset + 100 >= (data.totalFound || 0)) break;
     }
     return jobs;
   },

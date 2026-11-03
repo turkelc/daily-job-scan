@@ -114,6 +114,9 @@ function detectAts_(html) {
   m = html.match(/https?:\/\/[a-z0-9-]+\.wd\d+\.myworkdayjobs\.com\/(?:[a-z]{2}-[A-Z]{2}\/)?[A-Za-z0-9_-]+/);
   if (m) add('workday', m[0]);
 
+  m = html.match(/(?:careers|jobs)\.smartrecruiters\.com\/([A-Za-z0-9_-]+)/);
+  if (m) add('smartrecruiters', 'https://careers.smartrecruiters.com/' + m[1]);
+
   var comeet = detectComeet_(html);
   if (comeet) add('comeet-api', comeet);
 

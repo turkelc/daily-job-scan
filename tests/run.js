@@ -228,6 +228,19 @@ test('amazon: asks for Israel-only results', () => {
   assert.ok(/normalized_country_code%5B%5D=ISR/.test(fetched[0].url));
 });
 
+test('smartrecruiters: Israel-only query, absolute links, Israel in location', () => {
+  const { sandbox, fetched } = makeSandbox({ tabs: {}, routes: [{ match: /api\.smartrecruiters\.com/, body: () => fx('smartrecruiters.json') }] });
+  const jobs = JSON.parse(JSON.stringify(sandbox.FETCHERS.smartrecruiters('https://careers.smartrecruiters.com/Wix2')));
+  assert.ok(/companies\/Wix2\/postings\?country=il/.test(fetched[0].url));
+  assert.strictEqual(fetched.length, 1);
+  assert.strictEqual(jobs.length, 3);
+  assert.strictEqual(jobs[0].url, 'https://jobs.smartrecruiters.com/Wix2/744000140238949');
+  assert.ok(jobs.every((j) => sandbox.isIsraelJob_(j)));
+  assert.ok(/Remote/.test(jobs[2].location));
+  const d = JSON.parse(JSON.stringify(sandbox.detectAts_('<a href="https://careers.smartrecruiters.com/Zencity1">Jobs</a>')));
+  assert.deepStrictEqual(d, [{ type: 'smartrecruiters', url: 'https://careers.smartrecruiters.com/Zencity1' }]);
+});
+
 // ---------- discovery ----------
 const COMEET_EMBED = `<div id="careers"></div>
 <script type="text/javascript">
